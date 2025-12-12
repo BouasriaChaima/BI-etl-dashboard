@@ -60,32 +60,41 @@ dim_date = pd.DataFrame({
 print(f"created dim_date: {len(dim_date)} dates")
 
 # table des faits
-orders['OrderDate'] = pd.to_datetime(orders['OrderDate'], errors='coerce')
 orders['ShippedDate'] = pd.to_datetime(orders['ShippedDate'], errors='coerce')
 
-# Create mapping dictionaries using Sequential Keys (SK)
-print("Creating mapping keys using Sequential Keys...")
-customer_map = dim_customer.set_index(['Customer_NK', 'Source'])[
-    'Customer_SK'].to_dict()
-employee_map = dim_employee.set_index(['Employee_NK', 'Source'])[
-    'Employee_SK'].to_dict()
-date_map = dim_date.set_index('Date')['Date_SK'].to_dict()
+# Merge to get the sequential keys from dimensions
+print("Merging with dimensions to get sequential keys...")
 
-# putting the foreign keys (Sequential Keys) in the fact table
-orders['Customer_FK'] = orders.apply(
-    lambda row: customer_map.get((row['CustomerID'], row['Source'])), axis=1
-)
-orders['Employee_FK'] = orders.apply(
-    lambda row: employee_map.get((row['EmployeeID'], row['Source'])), axis=1
-)
-orders['Date_FK'] = orders['OrderDate'].map(date_map)
+# Merge with dim_customer to get Customer_SK
+orders = orders.merge(
+    dim_customer[['Customer_NK', 'Source', 'Customer_SK']],
+    left_on=['CustomerID', 'Source'],
+    right_on=['Customer_NK', 'Source'],
+    how='left'
+).rename(columns={'Customer_SK': 'Customer_FK'})
+
+# Merge with dim_employee to get Employee_SK
+orders = orders.merge(
+    dim_employee[['Employee_NK', 'Source', 'Employee_SK']],
+    left_on=['EmployeeID', 'Source'],
+    right_on=['Employee_NK', 'Source'],
+    how='left'
+).rename(columns={'Employee_SK': 'Employee_FK'})
+
+# Merge with dim_date to get Date_SK
+orders = orders.merge(
+    dim_date[['Date', 'Date_SK']],
+    left_on='OrderDate',
+    right_on='Date',
+    how='left'
+).rename(columns={'Date_SK': 'Date_FK'})
 
 # calculating KPIs
 print("calculating KPIs...")
 orders['Delivered'] = orders['ShippedDate'].notna().astype(int)
 orders['NotDelivered'] = orders['ShippedDate'].isna().astype(int)
 
-# creating table des faits with Sequential Keys as Foreign Keys
+# creating table des faits
 fact_orders = orders[['OrderID', 'Customer_FK', 'Employee_FK', 'Date_FK',
                       'Delivered', 'NotDelivered', 'Source']].copy()
 
@@ -104,5 +113,3 @@ with open('data/star_schema.pkl', 'wb') as f:
         'dim_date': dim_date,
         'fact_orders': fact_orders
     }, f)
-
-
